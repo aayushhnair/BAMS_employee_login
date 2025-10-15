@@ -1,0 +1,93 @@
+{
+  "api": {
+    "baseUrl": "http://localhost:3000",
+    "timeout": 10000,
+    "retryAttempts": 3,
+    "endpoints": {
+      "login": "/api/auth/login",
+      "logout": "/api/auth/logout", 
+      "heartbeat": "/api/heartbeat",
+      "verifySession": "/api/auth/verify-session",
+      "health": "/api/health"
+    }
+  },
+  "app": {
+    "name": "BAMS Employee Client",
+    "version": "1.0.0",
+    "companyName": "Bhishma Solutions",
+    "heartbeatInterval": 1800000,
+    "locationUpdateInterval": 30000,
+    "theme": "default",
+    "minimizeToTray": true,
+    "autoStart": false,
+    "windowConfig": {
+      "width": 800,
+      "height": 600,
+      "minWidth": 600,
+      "minHeight": 400,
+      "resizable": true,
+      "maximizable": true
+    }
+  },
+  "location": {
+    "enableHighAccuracy": true,
+    "timeout": 15000,
+    "maximumAge": 60000,
+    "updateInterval": 30000,
+    "requiredAccuracy": 100
+  },
+  "security": {
+    "enforceHttps": true,
+    "certificateValidation": true,
+    "autoLogoutTriggers": {
+      "windowClose": true,
+      "systemSuspend": true,
+      "screenLock": true,
+      "networkDisconnect": true,
+      "heartbeatFailure": true
+    },
+    "sessionTimeout": 43200000
+  },
+  "logging": {
+    "level": "info",
+    "maxFiles": 5,
+    "maxSize": "10MB",
+    "enableFileLogging": true,
+    "enableConsoleLogging": true,
+    "logApiCalls": true,
+    "logUserActions": true,
+    "logPerformance": false
+  },
+  "features": {
+    "autoUpdater": true,
+    "systemTray": true,
+    "crashReporting": true,
+    "networkMonitoring": true,
+    "locationTracking": true,
+    "heartbeatMonitoring": true,
+    "sessionManagement": true
+  },
+  "ui": {
+    "theme": {
+      "primaryRed": "#dc3545",
+      "primaryBlue": "#007bff", 
+      "primaryYellow": "#ffc107",
+      "secondaryRed": "#c82333",
+      "secondaryBlue": "#0056b3",
+      "secondaryYellow": "#e0a800"
+    },
+    "animations": {
+      "enabled": true,
+      "duration": 300
+    },
+    "notifications": {
+      "enabled": true,
+      "position": "top-right"
+    }
+  },
+  "performance": {
+    "enableMetrics": false,
+    "memoryThreshold": 100,
+    "cpuThreshold": 80
+  }
+}

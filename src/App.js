@@ -8,6 +8,7 @@ import LocationService from './services/LocationService';
 import AuthService from './services/AuthService';
 import HeartbeatService from './services/HeartbeatService';
 import LoggingService from './services/LoggingService';
+import { HEARTBEAT_INTERVAL_MS } from './config/constants';
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -16,6 +17,7 @@ function App() {
   const [location, setLocation] = useState(null);
   const [sessionId, setSessionId] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [nextHeartbeatTime, setNextHeartbeatTime] = useState(null); // NEW: Track next heartbeat time
 
   useEffect(() => {
     initializeApp();
@@ -44,12 +46,24 @@ function App() {
         try {
           const savedSession = JSON.parse(savedSessionStr);
           if (savedSession && savedSession.sessionId) {
-            // Verify session is still valid
-            const isValid = await AuthService.verifySession(savedSession.sessionId);
-            if (isValid) {
-              setUser(savedSession.user);
+            // Verify session is still valid and get heartbeat timing
+            const sessionData = await AuthService.verifySession(savedSession.sessionId);
+            if (sessionData.valid) {
+              setUser(sessionData.user || savedSession.user);
               setSessionId(savedSession.sessionId);
               setIsLoggedIn(true);
+              
+              // Calculate next heartbeat time from server data
+              if (sessionData.session && sessionData.session.timeSinceLastHeartbeatMs !== undefined) {
+                const remainingMs = HEARTBEAT_INTERVAL_MS - sessionData.session.timeSinceLastHeartbeatMs;
+                const nextHeartbeat = new Date(Date.now() + remainingMs);
+                setNextHeartbeatTime(nextHeartbeat);
+                LoggingService.info(`Next heartbeat in ${Math.floor(remainingMs / 1000)}s`);
+              } else {
+                // Fallback if server doesn't provide timing
+                const nextHeartbeat = new Date(Date.now() + HEARTBEAT_INTERVAL_MS);
+                setNextHeartbeatTime(nextHeartbeat);
+              }
               
               // Start heartbeat service
               HeartbeatService.start(savedSession.sessionId, deviceInfo.deviceId);
@@ -145,6 +159,11 @@ function App() {
         setSessionId(response.sessionId);
         setIsLoggedIn(true);
 
+        // Set initial heartbeat time from configured interval
+        const nextHeartbeat = new Date(Date.now() + HEARTBEAT_INTERVAL_MS);
+        setNextHeartbeatTime(nextHeartbeat);
+        LoggingService.info('Next heartbeat set for login');
+
         // Save session to localStorage (web app)
         try {
           localStorage.setItem('userSession', JSON.stringify({
@@ -203,6 +222,7 @@ function App() {
     setUser(null);
     setSessionId('');
     setIsLoggedIn(false);
+    setNextHeartbeatTime(null);
   };
 
   if (isLoading) {
@@ -229,6 +249,7 @@ function App() {
             deviceId={deviceId}
             location={location}
             sessionId={sessionId}
+            nextHeartbeatTime={nextHeartbeatTime}
             onLogout={handleLogout}
           />
         )}

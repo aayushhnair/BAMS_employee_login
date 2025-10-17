@@ -1,5 +1,6 @@
 import AuthService from './AuthService';
 import LocationService from './LocationService';
+import { HEARTBEAT_INTERVAL_MS } from '../config/constants';
 
 /**
  * Heartbeat Service - Sends periodic location updates to maintain session
@@ -10,7 +11,7 @@ class HeartbeatService {
     this.sessionId = null;
     this.deviceId = null;
     this.isActive = false;
-    this.interval = 1800000; // 30 minutes (1800000ms)
+    this.interval = HEARTBEAT_INTERVAL_MS; // From environment configuration
     this.failureCount = 0;
     this.maxFailures = 3;
     this.onFailureCallback = null;

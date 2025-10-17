@@ -1,18 +1,31 @@
-/* BAMS Color Scheme: Blue, Red, Green, White */
+/* BAMS Color Scheme: Navy Blue, Red, Yellow, White */
 :root {
-  --bams-primary-blue: #2563eb;
+  /* Primary Colors */
+  --bams-navy-blue: #001f3f;
   --bams-primary-red: #dc2626;
-  --bams-primary-green: #16a34a;
+  --bams-primary-yellow: #fbbf24;
   --bams-white: #ffffff;
-  --bams-secondary-blue: #1d4ed8;
+  
+  /* Secondary/Accent Colors */
+  --bams-navy-blue-light: #003366;
+  --bams-navy-blue-dark: #001529;
   --bams-secondary-red: #b91c1c;
-  --bams-secondary-green: #15803d;
-  --bams-light-gray: #f3f4f6;
+  --bams-red-light: #ef4444;
+  --bams-yellow-dark: #f59e0b;
+  --bams-yellow-light: #fde047;
+  
+  /* Neutral Colors */
+  --bams-light-gray: #f8fafc;
   --bams-dark-gray: #1f2937;
   --bams-border-gray: #e5e7eb;
   --bams-text-gray: #6b7280;
-  --bams-success-green: #16a34a;
-  --bams-danger-red: #dc2626;
+  --bams-text-light: #9ca3af;
+  
+  /* Semantic Colors (using main palette) */
+  --bams-success: #16a34a;
+  --bams-warning: var(--bams-primary-yellow);
+  --bams-danger: var(--bams-primary-red);
+  --bams-info: var(--bams-navy-blue);
 }
 
 * {
@@ -55,7 +68,7 @@ code {
   width: 50px;
   height: 50px;
   border: 4px solid var(--bams-light-gray);
-  border-top: 4px solid var(--bams-primary-blue);
+  border-top: 4px solid var(--bams-navy-blue);
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin-bottom: 20px;
@@ -82,21 +95,22 @@ code {
 }
 
 .btn-primary {
-  background-color: var(--bams-primary-blue);
+  background-color: var(--bams-navy-blue);
   color: white;
 }
 
 .btn-primary:hover {
-  background-color: var(--bams-secondary-blue);
+  background-color: var(--bams-navy-blue-light);
 }
 
 .btn-secondary {
-  background-color: var(--bams-primary-green);
-  color: white;
+  background-color: var(--bams-primary-yellow);
+  color: var(--bams-navy-blue);
+  font-weight: 600;
 }
 
 .btn-secondary:hover {
-  background-color: var(--bams-secondary-green);
+  background-color: var(--bams-yellow-dark);
 }
 
 .btn-danger {
@@ -136,8 +150,8 @@ code {
 
 .form-control:focus {
   outline: none;
-  border-color: var(--bams-primary-blue);
-  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+  border-color: var(--bams-navy-blue);
+  box-shadow: 0 0 0 2px rgba(0, 31, 63, 0.15);
 }
 
 .form-control:read-only {
@@ -178,18 +192,18 @@ code {
 }
 
 .status-online {
-  background-color: rgba(40, 167, 69, 0.1);
-  color: var(--bams-success-green);
+  background-color: rgba(22, 163, 74, 0.1);
+  color: var(--bams-success);
 }
 
 .status-offline {
-  background-color: rgba(220, 53, 69, 0.1);
-  color: var(--bams-danger-red);
+  background-color: rgba(220, 38, 38, 0.1);
+  color: var(--bams-danger);
 }
 
 .status-warning {
-  background-color: rgba(253, 126, 20, 0.1);
-  color: var(--bams-warning-orange);
+  background-color: rgba(251, 191, 36, 0.1);
+  color: var(--bams-warning);
 }
 
 .status-dot {
@@ -201,30 +215,30 @@ code {
 
 /* Error Styles */
 .error-message {
-  background-color: rgba(220, 53, 69, 0.1);
-  color: var(--bams-danger-red);
+  background-color: rgba(220, 38, 38, 0.1);
+  color: var(--bams-danger);
   padding: 10px;
   border-radius: 5px;
   margin-bottom: 15px;
-  border-left: 3px solid var(--bams-danger-red);
+  border-left: 3px solid var(--bams-danger);
 }
 
 .success-message {
-  background-color: rgba(40, 167, 69, 0.1);
-  color: var(--bams-success-green);
+  background-color: rgba(22, 163, 74, 0.1);
+  color: var(--bams-success);
   padding: 10px;
   border-radius: 5px;
   margin-bottom: 15px;
-  border-left: 3px solid var(--bams-success-green);
+  border-left: 3px solid var(--bams-success);
 }
 
 .warning-message {
-  background-color: rgba(253, 126, 20, 0.1);
-  color: var(--bams-warning-orange);
+  background-color: rgba(251, 191, 36, 0.1);
+  color: var(--bams-warning);
   padding: 10px;
   border-radius: 5px;
   margin-bottom: 15px;
-  border-left: 3px solid var(--bams-warning-orange);
+  border-left: 3px solid var(--bams-warning);
 }
 
 /* Utility Classes */

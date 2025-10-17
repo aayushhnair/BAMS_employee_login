@@ -102,6 +102,7 @@ class AuthService {
 
   /**
    * Verify session is still valid
+   * Returns session data including timeSinceLastHeartbeatMs for accurate countdown
    */
   async verifySession(sessionId) {
     try {
@@ -109,10 +110,20 @@ class AuthService {
         sessionId: sessionId
       });
       
-      return response.data.ok === true;
+      // Return full response data including timeSinceLastHeartbeatMs
+      if (response.data.ok === true) {
+        return {
+          valid: true,
+          session: response.data.session,
+          user: response.data.user,
+          expiresIn: response.data.expiresIn
+        };
+      }
+      
+      return { valid: false };
     } catch (error) {
       console.error('Session verification failed:', error);
-      return false;
+      return { valid: false };
     }
   }
 

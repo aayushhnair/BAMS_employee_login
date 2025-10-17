@@ -1,0 +1,62 @@
+# Vercel Ignore File
+# Excludes files/folders from deployment to stay under 100 MB limit
+
+# Dependencies (will be installed on Vercel)
+node_modules/
+
+# Development files
+.env.development
+.env.local
+.env.*.local
+
+# Build output (will be built on Vercel)
+build/
+dist/
+
+# Electron-specific files (not needed for web deployment)
+release/
+public/main.js
+public/preload.js
+src/electron/
+build.bat
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+electron-debug.log
+
+# Test and coverage
+coverage/
+.nyc_output
+__tests__/
+*.test.js
+*.spec.js
+
+# Documentation (optional - remove if you want these deployed)
+*.md
+!README.md
+
+# IDE and OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Git files
+.git/
+.gitignore
+.gitattributes
+
+# Application data files
+deviceId.json
+session.json
+user-preferences.json
+*.tmp
+*.temp
+
+# Optional: Source maps (uncomment if build is too large)
+# *.map

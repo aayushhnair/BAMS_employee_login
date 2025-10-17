@@ -3,19 +3,12 @@
  * Centralized configuration from environment variables
  */
 
-// Debug: Log environment variable
-console.log('🔍 Environment Variable REACT_APP_HEARTBEAT_INTERVAL:', process.env.REACT_APP_HEARTBEAT_INTERVAL);
-
 // Get heartbeat interval from environment variable (in milliseconds)
 // Default to 30 minutes (1800000ms) if not set
 export const HEARTBEAT_INTERVAL_MS = parseInt(
   process.env.REACT_APP_HEARTBEAT_INTERVAL || '1800000',
   10
 );
-
-console.log('✅ HEARTBEAT_INTERVAL_MS:', HEARTBEAT_INTERVAL_MS, 'ms');
-console.log('✅ HEARTBEAT_INTERVAL_SECONDS:', Math.floor(HEARTBEAT_INTERVAL_MS / 1000), 'seconds');
-console.log('✅ HEARTBEAT_INTERVAL_MINUTES:', Math.floor(HEARTBEAT_INTERVAL_MS / 60000), 'minutes');
 
 // Convert to seconds for display
 export const HEARTBEAT_INTERVAL_SECONDS = Math.floor(HEARTBEAT_INTERVAL_MS / 1000);

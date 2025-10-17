@@ -18,6 +18,7 @@ function App() {
   const [sessionId, setSessionId] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [nextHeartbeatTime, setNextHeartbeatTime] = useState(null); // NEW: Track next heartbeat time
+  const [logoutMessage, setLogoutMessage] = useState(''); // Track auto-logout message
 
   useEffect(() => {
     initializeApp();
@@ -65,8 +66,10 @@ function App() {
                 setNextHeartbeatTime(nextHeartbeat);
               }
               
-              // Start heartbeat service
-              HeartbeatService.start(savedSession.sessionId, deviceInfo.deviceId);
+              // Start heartbeat service with auto-logout callback
+              HeartbeatService.start(savedSession.sessionId, deviceInfo.deviceId, (reason) => {
+                handleAutoLogout(reason);
+              });
               LoggingService.info('Restored previous session');
             } else {
               // Clear invalid session
@@ -130,6 +133,7 @@ function App() {
         LoggingService.error(`Auto logout failed: ${reason}`, error);
       } finally {
         // Clear local state regardless of API call success
+        setLogoutMessage(reason); // Store the logout reason to show on login screen
         await clearSession();
       }
     }
@@ -159,9 +163,9 @@ function App() {
         setSessionId(response.sessionId);
         setIsLoggedIn(true);
 
-        // Set initial heartbeat time from configured interval
-        const nextHeartbeat = new Date(Date.now() + HEARTBEAT_INTERVAL_MS);
-        setNextHeartbeatTime(nextHeartbeat);
+  // Set initial heartbeat time from configured interval
+  const nextHeartbeat = new Date(Date.now() + HEARTBEAT_INTERVAL_MS);
+  setNextHeartbeatTime(nextHeartbeat);
         LoggingService.info('Next heartbeat set for login');
 
         // Save session to localStorage (web app)
@@ -175,22 +179,51 @@ function App() {
           LoggingService.error('Failed to save session to localStorage:', error);
         }
 
-        // Start heartbeat service
-        HeartbeatService.start(response.sessionId, deviceId);
+        // Start heartbeat service with auto-logout callback
+        HeartbeatService.start(response.sessionId, deviceId, (reason) => {
+          handleAutoLogout(reason);
+        });
+        
+        // Clear any previous logout message on successful login
+        setLogoutMessage('');
         
         LoggingService.info(`Login successful for user: ${response.user.username}`);
-        return { success: true };
+        return { ok: true };
       } else {
         LoggingService.warn(`Login failed: ${response.error}`);
-        return { success: false, error: response.error };
+        return { ok: false, error: response.error };
       }
     } catch (error) {
       LoggingService.error('Login error:', error);
-      return { success: false, error: 'Network error. Please check your connection.' };
+      return { ok: false, error: 'Network error. Please check your connection.' };
     } finally {
       setIsLoading(false);
     }
   };
+
+  // Keep nextHeartbeatTime updated by polling HeartbeatService.getTimeUntilNext()
+  useEffect(() => {
+    let pollId;
+    if (isLoggedIn) {
+      const update = () => {
+        try {
+          const ms = HeartbeatService.getTimeUntilNext();
+          if (ms !== undefined && ms !== null) {
+            setNextHeartbeatTime(new Date(Date.now() + ms));
+          }
+        } catch (err) {
+          // ignore
+        }
+      };
+
+      update();
+      pollId = setInterval(update, 1000);
+    }
+
+    return () => {
+      if (pollId) clearInterval(pollId);
+    };
+  }, [isLoggedIn]);
 
   const handleLogout = async () => {
     try {
@@ -242,6 +275,7 @@ function App() {
           <LoginScreen
             deviceId={deviceId}
             onLogin={handleLogin}
+            logoutMessage={logoutMessage}
           />
         ) : (
           <Dashboard

@@ -84,3 +84,4 @@ $RECYCLE.BIN/
 deviceId.json
 session.json
 user-preferences.json
+.vercel

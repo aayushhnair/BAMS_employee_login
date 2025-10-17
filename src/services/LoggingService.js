@@ -25,8 +25,11 @@ class LoggingService {
     this.maxLogSize = options.maxSize || this.maxLogSize;
     this.maxFiles = options.maxFiles || this.maxFiles;
 
-    // Setup console logging enhancement
-    this.setupConsoleLogging();
+    // Setup console logging enhancement only if enabled
+    this.enableConsoleLogs = (process.env.REACT_APP_ENABLE_CONSOLE_LOGS === 'true');
+    if (this.enableConsoleLogs) {
+      this.setupConsoleLogging();
+    }
 
     // Start periodic flush
     this.startPeriodicFlush();
@@ -171,17 +174,23 @@ class LoggingService {
 
   info(...args) {
     this.logToBuffer('info', args);
-    this.originalConsole.info(this.formatMessage('INFO', args));
+    if (this.enableConsoleLogs && this.originalConsole) {
+      this.originalConsole.info(this.formatMessage('INFO', args));
+    }
   }
 
   warn(...args) {
     this.logToBuffer('warn', args);
-    this.originalConsole.warn(this.formatMessage('WARN', args));
+    if (this.enableConsoleLogs && this.originalConsole) {
+      this.originalConsole.warn(this.formatMessage('WARN', args));
+    }
   }
 
   error(...args) {
     this.logToBuffer('error', args);
-    this.originalConsole.error(this.formatMessage('ERROR', args));
+    if (this.enableConsoleLogs && this.originalConsole) {
+      this.originalConsole.error(this.formatMessage('ERROR', args));
+    }
   }
 
   /**

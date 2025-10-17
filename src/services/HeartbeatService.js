@@ -1,6 +1,7 @@
 import AuthService from './AuthService';
 import LocationService from './LocationService';
 import { HEARTBEAT_INTERVAL_MS } from '../config/constants';
+import LoggingService from './LoggingService';
 
 /**
  * Heartbeat Service - Sends periodic location updates to maintain session
@@ -25,7 +26,7 @@ class HeartbeatService {
    */
   start(sessionId, deviceId, onFailure) {
     if (this.isActive) {
-      console.warn('Heartbeat service already active');
+    LoggingService.warn('Heartbeat service already active');
       return;
     }
 
@@ -35,20 +36,19 @@ class HeartbeatService {
     this.isActive = true;
     this.failureCount = 0;
 
-    console.log('Starting heartbeat service...');
+  LoggingService.info('Starting heartbeat service...');
 
     // Send initial heartbeat
     this.sendHeartbeat();
 
     // Setup periodic heartbeat
     this.intervalId = setInterval(() => {
-      this.sendHeartbeat();
+  this.sendHeartbeat();
     }, this.interval);
 
-    // Monitor network status
+  // Monitor network status
     this.setupNetworkMonitoring();
-
-    console.log(`Heartbeat service started with ${this.interval / 60000} minute interval`);
+  LoggingService.info(`Heartbeat service started with ${this.interval / 60000} minute interval`);
   }
 
   /**
@@ -85,45 +85,52 @@ class HeartbeatService {
    */
   async sendHeartbeat() {
     if (!this.isActive || !this.sessionId || !this.deviceId) {
-      console.warn('Heartbeat service not properly initialized');
+      LoggingService.warn('Heartbeat service not properly initialized');
       return;
     }
 
     try {
-      // Fetch fresh location for this heartbeat
-      console.log('Fetching fresh location for heartbeat...');
+  // Fetch fresh location for this heartbeat
+  LoggingService.debug('Fetching fresh location for heartbeat...');
       let location;
       try {
         location = await LocationService.forceUpdate();
       } catch (error) {
-        console.warn('Failed to get fresh location, using cached:', error);
+  LoggingService.warn('Failed to get fresh location, using cached:', error);
         location = LocationService.getCurrentLocation();
       }
       
       if (!location) {
-        console.warn('No location available for heartbeat');
+        LoggingService.warn('No location available for heartbeat');
         this.handleHeartbeatFailure('No location data');
         return;
       }
 
       // Check if we're online
       if (!this.isOnline) {
-        console.log('Offline - queueing heartbeat');
+        LoggingService.info('Offline - queueing heartbeat');
         this.queueHeartbeat(location);
         return;
       }
 
-      console.log('Sending heartbeat with fresh location...');
+      LoggingService.info('Sending heartbeat with fresh location...');
       const response = await AuthService.sendHeartbeat(this.sessionId, this.deviceId, location);
 
       if (response.ok) {
         this.handleHeartbeatSuccess();
       } else {
-        this.handleHeartbeatFailure(response.error || 'Heartbeat failed');
+        // Check for session expiry (401 Unauthorized)
+        if (response.statusCode === 401 || response.message === 'Session expired') {
+          LoggingService.warn('Session expired detected in heartbeat response');
+          this.handleSessionExpired();
+          return;
+        }
+        
+        this.handleHeartbeatFailure(response.error || response.message || 'Heartbeat failed');
       }
 
     } catch (error) {
-      console.error('Heartbeat error:', error);
+      LoggingService.error('Heartbeat error:', error);
       this.handleHeartbeatFailure(error.message);
     }
   }
@@ -132,9 +139,9 @@ class HeartbeatService {
    * Handle successful heartbeat
    */
   handleHeartbeatSuccess() {
-    this.failureCount = 0;
-    this.lastHeartbeat = new Date();
-    console.log('Heartbeat successful at', this.lastHeartbeat.toLocaleTimeString());
+  this.failureCount = 0;
+  this.lastHeartbeat = new Date();
+  LoggingService.info('Heartbeat successful at', this.lastHeartbeat.toLocaleTimeString());
 
     // Process any queued heartbeats when back online
     if (this.queuedHeartbeats.length > 0) {
@@ -147,10 +154,10 @@ class HeartbeatService {
    */
   handleHeartbeatFailure(reason) {
     this.failureCount++;
-    console.error(`Heartbeat failed (${this.failureCount}/${this.maxFailures}):`, reason);
+    LoggingService.error(`Heartbeat failed (${this.failureCount}/${this.maxFailures}):`, reason);
 
     if (this.failureCount >= this.maxFailures) {
-      console.error('Maximum heartbeat failures reached - triggering auto-logout');
+      LoggingService.error('Maximum heartbeat failures reached - triggering auto-logout');
       
       if (this.onFailureCallback) {
         this.onFailureCallback('Network connectivity lost - multiple heartbeat failures');
@@ -159,6 +166,19 @@ class HeartbeatService {
   }
 
   /**
+   * Handle session expired (401 Unauthorized)
+   */
+  handleSessionExpired() {
+    LoggingService.error('Session expired - triggering immediate auto-logout');
+    
+    // Stop the heartbeat service immediately
+    this.stop();
+    
+    // Trigger logout callback with session expired message
+    if (this.onFailureCallback) {
+      this.onFailureCallback('Session expired. Please login again.');
+    }
+  }  /**
    * Queue heartbeat for when connection is restored
    */
   queueHeartbeat(location) {
@@ -169,7 +189,7 @@ class HeartbeatService {
       deviceId: this.deviceId
     };
 
-    this.queuedHeartbeats.push(heartbeat);
+  this.queuedHeartbeats.push(heartbeat);
 
     // Keep only last 5 queued heartbeats
     if (this.queuedHeartbeats.length > 5) {
@@ -185,7 +205,7 @@ class HeartbeatService {
       return;
     }
 
-    console.log(`Processing ${this.queuedHeartbeats.length} queued heartbeats...`);
+  LoggingService.info(`Processing ${this.queuedHeartbeats.length} queued heartbeats...`);
 
     // Send only the most recent queued heartbeat
     const latestHeartbeat = this.queuedHeartbeats[this.queuedHeartbeats.length - 1];
@@ -198,12 +218,12 @@ class HeartbeatService {
       );
 
       if (response.ok) {
-        console.log('Queued heartbeat sent successfully');
+        LoggingService.info('Queued heartbeat sent successfully');
       } else {
-        console.error('Failed to send queued heartbeat:', response.error);
+        LoggingService.error('Failed to send queued heartbeat:', response.error);
       }
     } catch (error) {
-      console.error('Error sending queued heartbeat:', error);
+      LoggingService.error('Error sending queued heartbeat:', error);
     }
 
     // Clear the queue
@@ -215,10 +235,10 @@ class HeartbeatService {
    */
   setupNetworkMonitoring() {
     this.handleOnline = () => {
-      console.log('Network connection restored');
+      LoggingService.info('Network connection restored');
       this.isOnline = true;
       this.failureCount = 0; // Reset failure count when back online
-      
+
       // Send immediate heartbeat when connection is restored
       setTimeout(() => {
         this.sendHeartbeat();
@@ -226,7 +246,7 @@ class HeartbeatService {
     };
 
     this.handleOffline = () => {
-      console.log('Network connection lost');
+      LoggingService.info('Network connection lost');
       this.isOnline = false;
     };
 
@@ -239,7 +259,7 @@ class HeartbeatService {
    */
   forceHeartbeat() {
     if (this.isActive) {
-      console.log('Forcing immediate heartbeat...');
+      LoggingService.info('Forcing immediate heartbeat...');
       this.sendHeartbeat();
     }
   }
@@ -280,12 +300,17 @@ class HeartbeatService {
    * Get time until next heartbeat
    */
   getTimeUntilNext() {
+    // If we don't have a lastHeartbeat, estimate based on interval
+    const now = new Date();
     if (!this.lastHeartbeat) {
-      return 0;
+      // If service is active, assume next is interval from now
+      if (this.isActive) {
+        return this.interval;
+      }
+      return this.interval; // fallback
     }
 
     const nextHeartbeat = new Date(this.lastHeartbeat.getTime() + this.interval);
-    const now = new Date();
     const timeUntil = nextHeartbeat - now;
 
     return Math.max(0, timeUntil);

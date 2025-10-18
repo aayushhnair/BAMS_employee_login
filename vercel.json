@@ -8,7 +8,7 @@
     "REACT_APP_HEARTBEAT_INTERVAL": "600000",
     "REACT_APP_API_TIMEOUT": "10000",
     "REACT_APP_API_RETRY_ATTEMPTS": "3",
-    "REACT_APP_APP_NAME": "BAMS Employee Client",
+    "REACT_APP_APP_NAME": "WorkSens Employee Client",
     "REACT_APP_VERSION": "1.0.0",
     "REACT_APP_COMPANY_NAME": "Bhishma Solutions",
     "REACT_APP_LOG_LEVEL": "info",

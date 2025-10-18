@@ -1,19 +1,38 @@
 {
-  "short_name": "BAMS Client",
-  "name": "BAMS Employee Desktop Client",
-  "description": "Bhishma Attendance Monitoring System - Employee Desktop Client",
+  "short_name": "WorkSens",
+  "name": "WorkSens Employee Client",
+  "description": "WorkSens - Smart Workforce Management",
   "icons": [
     {
-      "src": "logo.png",
-      "sizes": "any",
+      "src": "icon-192.png",
+      "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
   "start_url": ".",
   "display": "standalone",
-  "theme_color": "#001f3f",
-  "background_color": "#ffffff",
+  "scope": "/",
+  "theme_color": "#0A192F",
+  "background_color": "#E6E8EB",
   "categories": ["business", "productivity"],
-  "orientation": "portrait-primary"
+  "orientation": "any"
 }

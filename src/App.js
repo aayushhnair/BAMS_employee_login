@@ -7,6 +7,7 @@ import DeviceService from './services/DeviceService';
 import LocationService from './services/LocationService';
 import AuthService from './services/AuthService';
 import HeartbeatService from './services/HeartbeatService';
+import WakeLockService from './services/WakeLockService';
 import LoggingService from './services/LoggingService';
 import { HEARTBEAT_INTERVAL_MS } from './config/constants';
 
@@ -70,6 +71,16 @@ function App() {
               HeartbeatService.start(savedSession.sessionId, deviceInfo.deviceId, (reason) => {
                 handleAutoLogout(reason);
               });
+              
+              // Acquire wake lock for restored session
+              const wakeLockAcquired = await WakeLockService.requestWakeLock();
+              if (wakeLockAcquired) {
+                LoggingService.info('Screen wake lock active - device will stay awake');
+              }
+              
+              // Setup wake lock visibility listener
+              WakeLockService.setupVisibilityListener();
+              
               LoggingService.info('Restored previous session');
             } else {
               // Clear invalid session
@@ -125,23 +136,47 @@ function App() {
   };
 
   const handleAutoLogout = async (reason) => {
-    if (isLoggedIn && sessionId) {
-      try {
-        await AuthService.logout(sessionId, deviceId, location);
-        LoggingService.info(`Auto logout successful: ${reason}`);
-      } catch (error) {
-        LoggingService.error(`Auto logout failed: ${reason}`, error);
-      } finally {
-        // Clear local state regardless of API call success
-        setLogoutMessage(reason); // Store the logout reason to show on login screen
-        await clearSession();
+    // reason may be a string or an object (server payload)
+    let message = '';
+    try {
+      if (typeof reason === 'string') {
+        message = reason;
+      } else if (reason && typeof reason === 'object') {
+        // If server sent a structured response (e.g., { login_status: false, message: '', error: '' })
+        if (reason.login_status === false) {
+          message = reason.message || reason.error || 'Session invalidated by server';
+        } else {
+          message = reason.message || reason.error || JSON.stringify(reason);
+        }
+      } else {
+        message = 'Session ended. Please login again.';
       }
+
+      // If not logged in client-side, still clear session state and show message
+      try {
+        // Best-effort call to logout API to invalidate server-side session
+        if (sessionId) {
+          await AuthService.logout(sessionId, deviceId, location);
+          LoggingService.info(`Auto logout API call completed: ${message}`);
+        }
+      } catch (err) {
+        LoggingService.warn('Auto logout API call failed (continuing):', err);
+      }
+
+    } catch (e) {
+      LoggingService.error('Error processing auto-logout reason:', e);
+      message = 'Session ended. Please login again.';
+    } finally {
+      // Always clear local session and inform UI
+      setLogoutMessage(message);
+      await clearSession();
     }
   };
 
   const handleLogin = async (loginData) => {
     try {
-      setIsLoading(true);
+      // DON'T set App-level isLoading - let LoginScreen handle its own loading state
+      // setIsLoading(true); // REMOVED - this causes full-page navigation
       
       // Fetch fresh location for login
       let freshLocation = location;
@@ -184,6 +219,15 @@ function App() {
           handleAutoLogout(reason);
         });
         
+        // Acquire wake lock to prevent screen from turning off
+        const wakeLockAcquired = await WakeLockService.requestWakeLock();
+        if (wakeLockAcquired) {
+          LoggingService.info('Screen wake lock active - device will stay awake');
+        }
+        
+        // Setup wake lock visibility listener
+        WakeLockService.setupVisibilityListener();
+        
         // Clear any previous logout message on successful login
         setLogoutMessage('');
         
@@ -196,9 +240,8 @@ function App() {
     } catch (error) {
       LoggingService.error('Login error:', error);
       return { ok: false, error: 'Network error. Please check your connection.' };
-    } finally {
-      setIsLoading(false);
     }
+    // No finally block needed - LoginScreen manages its own loading state
   };
 
   // Keep nextHeartbeatTime updated by polling HeartbeatService.getTimeUntilNext()
@@ -229,20 +272,44 @@ function App() {
     try {
       setIsLoading(true);
       
-      await AuthService.logout(sessionId, deviceId, location);
-      LoggingService.info('Manual logout successful');
+      const result = await AuthService.logout(sessionId, deviceId, location);
+      if (result.alreadyInvalidated) {
+        LoggingService.info('Manual logout: Session was already invalidated on server');
+      } else if (result.ok) {
+        LoggingService.info('Manual logout successful');
+      } else {
+        LoggingService.warn('Manual logout: Server request failed, cleared locally');
+      }
       
     } catch (error) {
-      LoggingService.error('Logout error:', error);
+      // Shouldn't reach here since AuthService.logout catches errors
+      LoggingService.warn('Unexpected logout error (cleared locally):', error);
     } finally {
       await clearSession();
       setIsLoading(false);
     }
   };
 
+  const handleRefreshLocation = async () => {
+    try {
+      LoggingService.info('🔄 Manual GPS refresh requested');
+      const newLocation = await LocationService.forceUpdate();
+      setLocation(newLocation);
+      LoggingService.info('✅ GPS location refreshed successfully');
+      return { ok: true, location: newLocation };
+    } catch (error) {
+      LoggingService.error('❌ Failed to refresh GPS location:', error);
+      return { ok: false, error: error.message };
+    }
+  };
+
   const clearSession = async () => {
     // Stop heartbeat service
     HeartbeatService.stop();
+    
+    // Release wake lock
+    await WakeLockService.releaseWakeLock();
+    LoggingService.info('Wake lock released on logout');
     
     // Clear stored session from localStorage (web app)
     try {
@@ -276,6 +343,8 @@ function App() {
             deviceId={deviceId}
             onLogin={handleLogin}
             logoutMessage={logoutMessage}
+            location={location}
+            onRefreshLocation={handleRefreshLocation}
           />
         ) : (
           <Dashboard

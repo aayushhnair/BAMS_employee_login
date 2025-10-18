@@ -95,8 +95,16 @@ class AuthService {
       
       return response.data;
     } catch (error) {
-      console.error('Logout error:', error);
-      // Don't throw error for logout - always allow local cleanup
+      // Expected errors during auto-logout (session already invalid)
+      const status = error.response?.status;
+      if (status === 401 || status === 400) {
+        // Session already invalid on server - this is expected during forced logout
+        console.log('Logout: Session already invalidated on server (expected)');
+        return { ok: true, alreadyInvalidated: true };
+      }
+      
+      // Unexpected errors
+      console.warn('Logout request failed (continuing with local cleanup):', error.message);
       return { ok: false, error: 'Logout request failed but session cleared locally' };
     }
   }

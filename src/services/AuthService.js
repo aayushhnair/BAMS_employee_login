@@ -33,14 +33,49 @@ class AuthService {
       }
     );
 
-    // Add response interceptor for logging
+    // Add response interceptor for logging AND login_status checking
     this.api.interceptors.response.use(
       (response) => {
         LoggingService.info(`API Response: ${response.status}`, response.data);
+        
+        // CRITICAL: Check login_status in EVERY response
+        if (response.data && response.data.login_status === false) {
+          LoggingService.error('🚨 CRITICAL: API returned login_status:false - Session invalidated by server!');
+          
+          // Trigger global logout event
+          const logoutEvent = new CustomEvent('forceLogout', {
+            detail: {
+              reason: response.data.message || response.data.error || 'Session invalidated by server',
+              source: 'api_interceptor',
+              endpoint: response.config.url
+            }
+          });
+          window.dispatchEvent(logoutEvent);
+          
+          // Still return response to allow normal error handling
+          return response;
+        }
+        
         return response;
       },
       (error) => {
         LoggingService.error('API Response Error:', error.response?.data || error.message);
+        
+        // CRITICAL: Check login_status even in error responses
+        if (error.response?.data?.login_status === false) {
+          LoggingService.error('🚨 CRITICAL: Error response has login_status:false - Session invalidated!');
+          
+          // Trigger global logout event
+          const logoutEvent = new CustomEvent('forceLogout', {
+            detail: {
+              reason: error.response.data.message || error.response.data.error || 'Session invalidated by server',
+              source: 'api_interceptor_error',
+              endpoint: error.config?.url
+            }
+          });
+          window.dispatchEvent(logoutEvent);
+        }
+        
         return Promise.reject(error);
       }
     );

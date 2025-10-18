@@ -59,8 +59,6 @@ class HeartbeatService {
       return;
     }
 
-    console.log('Stopping heartbeat service...');
-
     if (this.intervalId) {
       clearInterval(this.intervalId);
       this.intervalId = null;
@@ -76,8 +74,6 @@ class HeartbeatService {
     // Remove network event listeners
     window.removeEventListener('online', this.handleOnline);
     window.removeEventListener('offline', this.handleOffline);
-
-    console.log('Heartbeat service stopped');
   }
 
   /**
@@ -119,43 +115,45 @@ class HeartbeatService {
       // Log full response for debugging
       LoggingService.info('Heartbeat API Response:', { ok: response.ok, statusCode: response.statusCode, message: response.message, error: response.error, login_status: response.login_status });
 
-      // If server explicitly marks login_status false, force logout immediately
+      // CRITICAL: Check login_status FIRST (before response.ok)
+      // If login_status is explicitly false, user MUST be logged out immediately
       if (response && response.login_status === false) {
-        LoggingService.error('🚨 Server indicated login_status:false - forcing immediate logout', response.message || response.error);
-        try {
-          // Attempt to notify server we're logging out (best-effort)
-          await AuthService.logout(this.sessionId, this.deviceId, location).catch(err => {
-            LoggingService.warn('Logout API call during forced logout failed (continuing):', err);
-          });
-        } catch (e) {
-          // swallow - we still need to clear client state
-          LoggingService.warn('Exception when calling logout during forced logout:', e);
-        }
-
-        // Stop the heartbeat and notify app to clear session
+        LoggingService.error('🚨 CRITICAL: Server returned login_status:false - FORCING IMMEDIATE LOGOUT');
+        
+        // Stop service IMMEDIATELY
         this.stop();
+        
+        // Trigger IMMEDIATE logout via callback
         if (this.onFailureCallback) {
           this.onFailureCallback(response.message || response.error || 'Session invalidated by server');
+        } else {
+          LoggingService.error('🚨 CRITICAL ERROR: No failure callback! Cannot logout user!');
         }
         return;
       }
 
+      // CRITICAL: Check response.ok (any failure = immediate logout)
       if (response.ok === true) {
         this.handleHeartbeatSuccess();
       } else {
-        // CRITICAL: Any non-ok response should trigger IMMEDIATE logout
-        LoggingService.error('❌ Heartbeat API returned failure response:', response);
+        // CRITICAL: Any non-ok response MUST trigger IMMEDIATE logout - NO EXCEPTIONS
+        LoggingService.error('❌ CRITICAL: Heartbeat failed - response.ok is NOT true:', response);
         
-        // Check for session expiry (401 Unauthorized)
-        if (response.statusCode === 401 || response.message === 'Session expired') {
-          LoggingService.error('🔒 Session expired detected in heartbeat response');
-          this.handleSessionExpired();
-          return;
+        // Stop the service IMMEDIATELY
+        this.stop();
+        
+        // Trigger IMMEDIATE logout via callback
+        if (this.onFailureCallback) {
+          const message = response.statusCode === 401 || response.message === 'Session expired'
+            ? 'Session expired. Please login again.'
+            : response.error || response.message || 'Server connection lost. Please login again.';
+          
+          LoggingService.error('🚨 Triggering IMMEDIATE auto-logout due to heartbeat failure');
+          this.onFailureCallback(message);
+        } else {
+          LoggingService.error('🚨 CRITICAL ERROR: No failure callback registered! Cannot logout user!');
         }
-        
-        // For any other failure, trigger immediate logout
-        LoggingService.error('🚨 CRITICAL: Heartbeat failed - triggering immediate logout');
-        this.handleHeartbeatFailure(response.error || response.message || 'Server rejected heartbeat');
+        return;
       }
 
     } catch (error) {
@@ -179,40 +177,39 @@ class HeartbeatService {
   }
 
   /**
-   * Handle heartbeat failure
+   * Handle heartbeat failure - IMMEDIATE LOGOUT
    */
   handleHeartbeatFailure(reason) {
-    this.failureCount++;
-    LoggingService.error(`❌ Heartbeat failed (attempt ${this.failureCount}):`, reason);
+    LoggingService.error(`🚨 HEARTBEAT FAILURE - FORCING IMMEDIATE LOGOUT:`, reason);
 
-    // CRITICAL: Stop service immediately on first failure
-    LoggingService.error('🛑 Stopping heartbeat service immediately');
+    // CRITICAL: Stop service IMMEDIATELY
     this.stop();
     
-    // Trigger immediate logout
-    LoggingService.error('🚪 Heartbeat failure detected - triggering IMMEDIATE auto-logout');
+    // CRITICAL: Trigger IMMEDIATE logout via callback
     if (this.onFailureCallback) {
-      const message = reason.includes('Server rejected') || reason.includes('connection') 
-        ? 'Server connection lost. Please login again.'
-        : 'Session validation failed. Please login again.';
+      const message = reason || 'Server connection lost. Please login again.';
+      LoggingService.error('🚪 Calling onFailureCallback to force logout NOW');
       this.onFailureCallback(message);
+    } else {
+      LoggingService.error('🚨 CRITICAL ERROR: No failure callback! Cannot logout user!');
     }
   }
 
   /**
-   * Handle session expired (401 Unauthorized)
+   * Handle session expired - IMMEDIATE LOGOUT
    */
   handleSessionExpired() {
-    LoggingService.error('⏱️ Session expired - triggering immediate auto-logout');
+    LoggingService.error('⏱️ SESSION EXPIRED - FORCING IMMEDIATE LOGOUT');
     
-    // Stop the heartbeat service immediately
-    LoggingService.error('🛑 Stopping heartbeat service due to session expiry');
+    // Stop service IMMEDIATELY
     this.stop();
     
-    // Trigger logout callback with session expired message
+    // Trigger IMMEDIATE logout
     if (this.onFailureCallback) {
-      LoggingService.error('🚪 Calling logout callback with session expired message');
+      LoggingService.error('🚪 Calling logout callback for session expiry');
       this.onFailureCallback('Session expired. Please login again.');
+    } else {
+      LoggingService.error('🚨 CRITICAL ERROR: No failure callback! Cannot logout user!');
     }
   }  /**
    * Queue heartbeat for when connection is restored

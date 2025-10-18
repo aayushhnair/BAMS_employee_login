@@ -25,21 +25,43 @@ class LoggingService {
     this.maxLogSize = options.maxSize || this.maxLogSize;
     this.maxFiles = options.maxFiles || this.maxFiles;
 
-    // Setup console logging enhancement only if enabled
-    this.enableConsoleLogs = (process.env.REACT_APP_ENABLE_CONSOLE_LOGS === 'true');
-    if (this.enableConsoleLogs) {
-      this.setupConsoleLogging();
-    }
+    // PRODUCTION MODE: Disable ALL console logs
+    this.enableConsoleLogs = false; // Force disable in production
+    
+    // Disable all console methods in production
+    this.disableConsoleInProduction();
 
-    // Start periodic flush
+    // Start periodic flush (silent in production)
     this.startPeriodicFlush();
 
     this.isInitialized = true;
-    this.info('Logging service initialized', { level: this.logLevel });
+    // Silent initialization in production
   }
 
   /**
-   * Setup enhanced console logging
+   * Disable all console output in production
+   */
+  disableConsoleInProduction() {
+    // Preserve original console for internal use only
+    this.originalConsole = {
+      log: console.log,
+      info: console.info,
+      warn: console.warn,
+      error: console.error,
+      debug: console.debug
+    };
+
+    // Replace ALL console methods with no-ops (silent)
+    const noop = () => {};
+    console.log = noop;
+    console.info = noop;
+    console.warn = noop;
+    console.error = noop;
+    console.debug = noop;
+  }
+
+  /**
+   * Setup enhanced console logging (DISABLED IN PRODUCTION)
    */
   setupConsoleLogging() {
     // Preserve original console methods

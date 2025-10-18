@@ -105,6 +105,18 @@ function App() {
   };
 
   const setupSystemEventListeners = () => {
+    // CRITICAL: Global forceLogout event listener (triggered by API interceptor)
+    window.addEventListener('forceLogout', (event) => {
+      LoggingService.error('🚨 FORCE LOGOUT EVENT RECEIVED:', event.detail);
+      
+      // Trigger immediate auto-logout
+      handleAutoLogout({
+        message: event.detail.reason,
+        source: event.detail.source,
+        endpoint: event.detail.endpoint
+      });
+    });
+
     // Handle window/tab close (web app)
     window.addEventListener('beforeunload', (e) => {
       if (isLoggedIn && sessionId) {

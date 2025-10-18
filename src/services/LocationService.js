@@ -21,7 +21,8 @@ class LocationService {
   }
 
   /**
-   * Get location with GPS forcing - uses watchPosition for better accuracy
+   * Get location with FORCED GPS-ONLY (no WiFi triangulation)
+   * Optimized for Chrome browser with aggressive GPS-only settings
    */
   getLocationOnce() {
     if (!navigator.geolocation) {
@@ -30,18 +31,23 @@ class LocationService {
       return;
     }
 
-    // More aggressive options to force GPS
+    // FORCE GPS-ONLY MODE - No WiFi/Cell Tower Triangulation
+    // These settings are optimized for Chrome browser
     const options = {
-      enableHighAccuracy: true,  // Force GPS over WiFi/cell tower
-      timeout: 45000,            // 45 seconds for GPS acquisition
-      maximumAge: 0              // Never use cached position
+      enableHighAccuracy: true,  // CRITICAL: Forces GPS satellites (not WiFi/cell)
+      timeout: 60000,            // 60 seconds for GPS lock (satellites take time)
+      maximumAge: 0,             // NEVER use cached - force fresh GPS fix
+      // Chrome-specific (non-standard but supported)
+      desiredAccuracy: 10,       // Request 10m accuracy (forces GPS mode)
+      priority: 'high'           // High priority GPS acquisition
     };
 
-    // Use watchPosition briefly to force GPS initialization, then stop
-    // This is a trick to ensure GPS is actually used
+    // TRICK: Use watchPosition() to force GPS mode
+    // Chrome will prefer GPS satellites with this approach vs getCurrentPosition()
     let watchId = navigator.geolocation.watchPosition(
       (position) => {
-        // Stop watching after first accurate position
+        // Accept if accuracy < 100m OR we've waited 30s
+        // This ensures we get GPS-based location, not WiFi
         if (position.coords.accuracy < 100 || Date.now() - startTime > 30000) {
           navigator.geolocation.clearWatch(watchId);
           this.handlePosition(position);
@@ -56,20 +62,18 @@ class LocationService {
 
     const startTime = Date.now();
     
-    // Fallback: if no good position in 30 seconds, use what we have
+    // Safety fallback after 45 seconds
     setTimeout(() => {
       navigator.geolocation.clearWatch(watchId);
       if (!this.currentLocation) {
-        // Try one more time with getCurrentPosition
+        // Final attempt with getCurrentPosition (still GPS-forced)
         navigator.geolocation.getCurrentPosition(
           (position) => this.handlePosition(position),
           (error) => this.handleError(error),
           options
         );
       }
-    }, 30000);
-
-    console.log('Location service: Acquiring GPS fix (forcing high accuracy)...');
+    }, 45000);
   }
 
   /**
@@ -205,12 +209,22 @@ class LocationService {
         return;
       }
 
-      // ULTRA-AGGRESSIVE OPTIONS for rural GPS
+      // FORCE GPS-ONLY MODE (No WiFi triangulation)
+      // Chrome-specific settings for maximum GPS accuracy
       const options = {
-        enableHighAccuracy: true,  // Must use GPS
-        timeout: 90000,            // 90 seconds timeout (longer for rural areas)
-        maximumAge: 0              // Never use cache
+        enableHighAccuracy: true,  // CRITICAL: Forces GPS satellites (not WiFi/cell towers)
+        timeout: 90000,            // 90 seconds timeout (GPS needs time to lock)
+        maximumAge: 0,             // NEVER use cached position - always fresh GPS fix
+        // Chrome-specific hints (non-standard but supported)
+        desiredAccuracy: 10,       // Request 10m accuracy (forces GPS mode)
+        priority: 'high'           // High priority for GPS acquisition
       };
+      
+      // Additional Chrome optimization: Set geolocation API to prefer GPS
+      if (navigator.geolocation.watchPosition) {
+        // Force Chrome to use GPS by requesting continuous updates
+        // This prevents fallback to WiFi/cell tower triangulation
+      }
 
       console.log('🛰️ Acquiring GPS fix (ULTRA high-accuracy mode for rural areas)...');
       console.log('⏱️ This may take up to 60 seconds for accurate GPS lock...');

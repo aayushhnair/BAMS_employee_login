@@ -2,6 +2,7 @@ import AuthService from './AuthService';
 import LocationService from './LocationService';
 import { HEARTBEAT_INTERVAL_MS } from '../config/constants';
 import LoggingService from './LoggingService';
+import NotificationService from './NotificationService';
 
 /**
  * Heartbeat Service - Sends periodic location updates to maintain session
@@ -185,9 +186,12 @@ class HeartbeatService {
     // CRITICAL: Stop service IMMEDIATELY
     this.stop();
     
+    // Show notification for heartbeat failure
+    const message = reason || 'Server connection lost. Please login again.';
+    NotificationService.showHeartbeatFailureNotification(message);
+    
     // CRITICAL: Trigger IMMEDIATE logout via callback
     if (this.onFailureCallback) {
-      const message = reason || 'Server connection lost. Please login again.';
       LoggingService.error('🚪 Calling onFailureCallback to force logout NOW');
       this.onFailureCallback(message);
     } else {
@@ -204,6 +208,9 @@ class HeartbeatService {
     // Stop service IMMEDIATELY
     this.stop();
     
+    // Show notification for session expiry
+    NotificationService.showLogoutNotification('Session expired. Please login again.', 'heartbeat');
+    
     // Trigger IMMEDIATE logout
     if (this.onFailureCallback) {
       LoggingService.error('🚪 Calling logout callback for session expiry');
@@ -211,7 +218,9 @@ class HeartbeatService {
     } else {
       LoggingService.error('🚨 CRITICAL ERROR: No failure callback! Cannot logout user!');
     }
-  }  /**
+  }
+
+  /**
    * Queue heartbeat for when connection is restored
    */
   queueHeartbeat(location) {

@@ -9,6 +9,7 @@ import AuthService from './services/AuthService';
 import HeartbeatService from './services/HeartbeatService';
 import WakeLockService from './services/WakeLockService';
 import LoggingService from './services/LoggingService';
+import NotificationService from './services/NotificationService';
 import { HEARTBEAT_INTERVAL_MS } from './config/constants';
 
 function App() {
@@ -31,6 +32,10 @@ function App() {
       LoggingService.init();
       LoggingService.info('BAMS Employee Client starting...');
 
+      // Initialize notifications (request permission)
+      await NotificationService.init();
+      LoggingService.info('NotificationService initialized');
+
       // Initialize device ID
       const deviceInfo = await DeviceService.getDeviceId();
       setDeviceId(deviceInfo.deviceId);
@@ -39,6 +44,14 @@ function App() {
       // Initialize location service
       LocationService.init((newLocation) => {
         setLocation(newLocation);
+        
+        // Check GPS accuracy and show notification if poor
+        if (isLoggedIn && newLocation && newLocation.accuracy) {
+          const accuracyStatus = LocationService.getAccuracyStatus();
+          if (accuracyStatus.status === 'poor' || newLocation.accuracy > 100) {
+            NotificationService.showGPSAccuracyWarning(newLocation.accuracy, accuracyStatus.status);
+          }
+        }
       });
 
       // Check if user is already logged in
@@ -109,6 +122,12 @@ function App() {
     window.addEventListener('forceLogout', (event) => {
       LoggingService.error('🚨 FORCE LOGOUT EVENT RECEIVED:', event.detail);
       
+      // Show notification for logout
+      NotificationService.showLogoutNotification(
+        event.detail.reason,
+        event.detail.source
+      );
+      
       // Trigger immediate auto-logout
       handleAutoLogout({
         message: event.detail.reason,
@@ -140,20 +159,27 @@ function App() {
     // Handle online/offline events
     window.addEventListener('offline', () => {
       LoggingService.info('Network disconnected');
+      NotificationService.showOfflineNotification();
     });
 
     window.addEventListener('online', () => {
       LoggingService.info('Network reconnected');
+      NotificationService.showOnlineNotification();
     });
   };
 
   const handleAutoLogout = async (reason) => {
     // reason may be a string or an object (server payload)
     let message = '';
+    let source = 'system';
+    
     try {
       if (typeof reason === 'string') {
         message = reason;
       } else if (reason && typeof reason === 'object') {
+        // Extract source for notification categorization
+        source = reason.source || 'system';
+        
         // If server sent a structured response (e.g., { login_status: false, message: '', error: '' })
         if (reason.login_status === false) {
           message = reason.message || reason.error || 'Session invalidated by server';
@@ -163,6 +189,9 @@ function App() {
       } else {
         message = 'Session ended. Please login again.';
       }
+
+      // Show notification FIRST (before clearing session)
+      NotificationService.showLogoutNotification(message, source);
 
       // If not logged in client-side, still clear session state and show message
       try {
@@ -178,6 +207,7 @@ function App() {
     } catch (e) {
       LoggingService.error('Error processing auto-logout reason:', e);
       message = 'Session ended. Please login again.';
+      NotificationService.showLogoutNotification(message, 'error');
     } finally {
       // Always clear local session and inform UI
       setLogoutMessage(message);

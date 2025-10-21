@@ -99,7 +99,7 @@ function createTray() {
 
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: 'Show BAMS',
+      label: 'Show WorkSens',
       click: () => {
         if (mainWindow) {
           mainWindow.show();
@@ -108,7 +108,7 @@ function createTray() {
       }
     },
     {
-      label: 'Hide BAMS',
+      label: 'Hide WorkSens',
       click: () => {
         if (mainWindow) {
           mainWindow.hide();
@@ -124,7 +124,7 @@ function createTray() {
     },
     { type: 'separator' },
     {
-      label: 'Quit BAMS',
+      label: 'Quit WorkSens',
       click: () => {
         isQuitting = true;
         app.quit();
@@ -132,7 +132,7 @@ function createTray() {
     }
   ]);
 
-  tray.setToolTip('BAMS Employee Client');
+  tray.setToolTip('WorkSens Employee Client');
   tray.setContextMenu(contextMenu);
 
   // Handle tray click

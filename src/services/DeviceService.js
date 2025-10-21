@@ -86,7 +86,7 @@ class DeviceService {
       // Ultimate fallback: BAMS prefix + timestamp + random
       const timestamp = Date.now().toString(36).toUpperCase();
       const random = this.generateRandomString(8);
-      return `BAMS-${timestamp}-${random}`;
+      return `WorkSens-${timestamp}-${random}`;
     }
   }
 

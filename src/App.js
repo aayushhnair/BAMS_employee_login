@@ -11,6 +11,7 @@ import WakeLockService from './services/WakeLockService';
 import LoggingService from './services/LoggingService';
 import NotificationService from './services/NotificationService';
 import { HEARTBEAT_INTERVAL_MS } from './config/constants';
+import SessionExpiryModal from './components/SessionExpiryModal';
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -20,7 +21,12 @@ function App() {
   const [sessionId, setSessionId] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [nextHeartbeatTime, setNextHeartbeatTime] = useState(null); // NEW: Track next heartbeat time
+  const [lastHeartbeat, setLastHeartbeat] = useState(null);
+  const [heartbeatResponse, setHeartbeatResponse] = useState(null);
   const [logoutMessage, setLogoutMessage] = useState(''); // Track auto-logout message
+  const [runtimeTimerId, setRuntimeTimerId] = useState(null);
+  const [expiryModalVisible, setExpiryModalVisible] = useState(false);
+  const [expiryTimeLeft, setExpiryTimeLeft] = useState(0);
 
   useEffect(() => {
     initializeApp();
@@ -30,7 +36,7 @@ function App() {
     try {
       // Initialize logging
       LoggingService.init();
-      LoggingService.info('BAMS Employee Client starting...');
+      LoggingService.info('WorkSens Employee Client starting...');
 
       // Initialize notifications (request permission)
       await NotificationService.init();
@@ -84,6 +90,11 @@ function App() {
               HeartbeatService.start(savedSession.sessionId, deviceInfo.deviceId, (reason) => {
                 handleAutoLogout(reason);
               });
+
+                      // Start per-window runtime timer (10 hours) to force logout if window runs too long
+                      try {
+                        startSharedRuntimeTimer(savedSession.sessionId);
+                      } catch (e) {}
               
               // Acquire wake lock for restored session
               const wakeLockAcquired = await WakeLockService.requestWakeLock();
@@ -154,6 +165,47 @@ function App() {
       } else {
         LoggingService.info('Tab visible');
       }
+    });
+
+    // Heartbeat events from HeartbeatService
+    window.addEventListener('heartbeat:success', (e) => {
+      try {
+        const ts = e.detail && e.detail.timestamp ? new Date(e.detail.timestamp) : new Date();
+        setLastHeartbeat(ts);
+        setHeartbeatResponse(e.detail && e.detail.response ? e.detail.response : { ok: true });
+
+        // Update next heartbeat time based on configured interval
+        const next = new Date(Date.now() + HEARTBEAT_INTERVAL_MS);
+        setNextHeartbeatTime(next);
+        // Extra safety: if server indicates login_status:false in the response, force logout
+        try {
+          const resp = e.detail && e.detail.response ? e.detail.response : null;
+          if (resp && resp.login_status === false) {
+            LoggingService.error('heartbeat:success contained login_status:false - forcing logout');
+            handleAutoLogout(resp);
+          }
+        } catch (ex) {}
+      } catch (err) {
+        // ignore
+      }
+    });
+
+    window.addEventListener('heartbeat:failure', (e) => {
+      try {
+        setHeartbeatResponse({ ok: false, detail: e.detail });
+        // mark nextHeartbeatTime as null to show immediate attention
+        setNextHeartbeatTime(null);
+        // Force an immediate auto-logout based on the failure detail
+        try {
+          LoggingService.error('heartbeat:failure received - forcing auto-logout', e.detail);
+          // Pass the server response or detail object if available
+          const payload = e.detail && (e.detail.response || e.detail) ? (e.detail.response || e.detail) : 'Heartbeat failure';
+          handleAutoLogout(payload);
+        } catch (ex) {
+          // still ensure session cleared
+          try { handleAutoLogout('Heartbeat failure'); } catch(e){}
+        }
+      } catch (err) {}
     });
 
     // Handle online/offline events
@@ -272,6 +324,11 @@ function App() {
         
         // Clear any previous logout message on successful login
         setLogoutMessage('');
+
+        // Start per-window runtime timer (10 hours) to force logout if window runs too long
+        try {
+          startSharedRuntimeTimer(response.sessionId);
+        } catch (e) {}
         
         LoggingService.info(`Login successful for user: ${response.user.username}`);
         return { ok: true };
@@ -359,7 +416,147 @@ function App() {
     } catch (error) {
       console.error('Failed to clear session from localStorage:', error);
     }
+
+    // Clear runtime timer if set
+    try {
+      if (runtimeTimerId) {
+        clearTimeout(runtimeTimerId);
+        setRuntimeTimerId(null);
+      }
+    } catch (e) {}
     
+
+  // --- Shared runtime timer across tabs using BroadcastChannel + localStorage ---
+  const SHARED_TIMER_KEY = 'worksens:session:startTs';
+  const SHARED_TIMER_TTL = 10 * 60 * 60 * 1000; // 10 hours
+  const SHARED_WARNING_BEFORE_MS = 5 * 60 * 1000; // 5 minutes warning
+
+  const bc = typeof window !== 'undefined' && 'BroadcastChannel' in window ? new BroadcastChannel('worksens_session') : null;
+
+  const startSharedRuntimeTimer = (sessionId) => {
+    try {
+      const startTs = Date.now();
+      localStorage.setItem(SHARED_TIMER_KEY, String(startTs));
+      // notify other tabs
+      if (bc) bc.postMessage({ type: 'session_start', startTs, sessionId });
+      scheduleLocalWarnings(startTs);
+    } catch (e) {
+      LoggingService.warn('Failed to start shared runtime timer', e);
+    }
+  };
+
+  const clearSharedRuntimeTimer = () => {
+    try {
+      localStorage.removeItem(SHARED_TIMER_KEY);
+      if (bc) bc.postMessage({ type: 'session_clear' });
+      setExpiryModalVisible(false);
+      setExpiryTimeLeft(0);
+    } catch (e) {}
+  };
+
+  const scheduleLocalWarnings = (startTs) => {
+    try {
+      // compute warning time and expiry
+      const expiryTs = startTs + SHARED_TIMER_TTL;
+      const warningTs = Math.max(startTs, expiryTs - SHARED_WARNING_BEFORE_MS);
+      const now = Date.now();
+
+      // clear existing
+      if (runtimeTimerId) clearTimeout(runtimeTimerId);
+
+      // time until warning
+      const untilWarning = Math.max(0, warningTs - now);
+      const warningId = setTimeout(() => {
+        // show modal and countdown
+        setExpiryModalVisible(true);
+        startExpiryCountdown(expiryTs);
+      }, untilWarning);
+
+      setRuntimeTimerId(warningId);
+    } catch (e) {
+      LoggingService.warn('Failed to schedule local warnings', e);
+    }
+  };
+
+  const startExpiryCountdown = (expiryTs) => {
+    try {
+      const tick = () => {
+        const left = Math.max(0, Math.floor((expiryTs - Date.now()) / 1000));
+        setExpiryTimeLeft(left);
+        if (left <= 0) {
+          // final logout
+          NotificationService.showLogoutNotification('Session duration exceeded 10 hours. You will be logged out.', 'system');
+          handleAutoLogout('Session duration exceeded 10 hours');
+        }
+      };
+
+      tick();
+      const interval = setInterval(tick, 1000);
+
+      // store interval id in runtimeTimerId so clearSession removes it
+      setRuntimeTimerId(interval);
+    } catch (e) {}
+  };
+
+  // Listen for storage or broadcast events from other tabs
+  useEffect(() => {
+    const onStorage = (ev) => {
+      if (ev.key === SHARED_TIMER_KEY) {
+        const startTs = Number(ev.newValue || 0);
+        if (startTs) {
+          scheduleLocalWarnings(startTs);
+        } else {
+          // cleared
+          if (runtimeTimerId) {
+            clearTimeout(runtimeTimerId);
+            setRuntimeTimerId(null);
+          }
+          setExpiryModalVisible(false);
+        }
+      }
+    };
+
+    const onBC = (msg) => {
+      if (!msg || !msg.data) return;
+      const d = msg.data;
+      if (d.type === 'session_start') scheduleLocalWarnings(d.startTs);
+      if (d.type === 'session_clear') {
+        if (runtimeTimerId) clearTimeout(runtimeTimerId);
+        setRuntimeTimerId(null);
+        setExpiryModalVisible(false);
+      }
+    };
+
+    window.addEventListener('storage', onStorage);
+    if (bc) bc.addEventListener('message', onBC);
+
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      if (bc) bc.removeEventListener('message', onBC);
+    };
+  }, [runtimeTimerId]);
+
+  const handleExtendSession = async () => {
+    try {
+      // attempt to extend using AuthService
+      const res = await AuthService.extendSession(sessionId);
+      if (res && res.ok) {
+        // reset shared timer
+        startSharedRuntimeTimer(sessionId);
+        setExpiryModalVisible(false);
+        NotificationService.showOnlineNotification();
+        return true;
+      } else {
+        NotificationService.showLogoutNotification('Unable to extend session. You will be logged out.', 'system');
+        handleAutoLogout('Unable to extend session');
+        return false;
+      }
+    } catch (e) {
+      NotificationService.showLogoutNotification('Unable to extend session. You will be logged out.', 'system');
+      handleAutoLogout('Unable to extend session');
+      return false;
+    }
+  };
     // Clear state
     setUser(null);
     setSessionId('');
@@ -371,7 +568,7 @@ function App() {
     return (
       <div className="app-loading">
         <div className="loading-spinner"></div>
-        <h2>BAMS Employee Client</h2>
+        <h2>WorkSens Employee Client</h2>
         <p>Loading...</p>
       </div>
     );
@@ -395,9 +592,12 @@ function App() {
             location={location}
             sessionId={sessionId}
             nextHeartbeatTime={nextHeartbeatTime}
+            lastHeartbeat={lastHeartbeat}
+            heartbeatResponse={heartbeatResponse}
             onLogout={handleLogout}
           />
         )}
+        <SessionExpiryModal visible={expiryModalVisible} timeLeftSec={expiryTimeLeft} onExtend={handleExtendSession} onDismiss={() => setExpiryModalVisible(false)} />
       </div>
     </ErrorBoundary>
   );

@@ -97,4 +97,4 @@ contextBridge.exposeInMainWorld('nodeAPI', {
 });
 
 // Log that preload script has loaded
-console.log('BAMS Employee Client preload script loaded');
+console.log('WorkSens Employee Client preload script loaded');

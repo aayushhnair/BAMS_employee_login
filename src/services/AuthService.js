@@ -56,6 +56,21 @@ class AuthService {
           return response;
         }
         
+        // Only force logout for explicit server signals
+        try {
+          const resp = response.data || {};
+          if (resp.login_status === false || resp.force_logout === true) {
+            const logoutEvent = new CustomEvent('forceLogout', {
+              detail: {
+                reason: resp.message || resp.error || 'Session invalidated by server',
+                source: 'api_response_force',
+                endpoint: response.config.url
+              }
+            });
+            window.dispatchEvent(logoutEvent);
+          }
+        } catch (e) {}
+
         return response;
       },
       (error) => {
@@ -76,9 +91,41 @@ class AuthService {
           window.dispatchEvent(logoutEvent);
         }
         
+        // Only trigger logout for explicit auth-related statuses or server signal
+        try {
+          const status = error.response?.status;
+          const data = error.response?.data || {};
+
+          const shouldForceLogout = (
+            data && (data.login_status === false || data.force_logout === true)
+          ) || [401, 403, 419, 440].includes(status);
+
+          if (shouldForceLogout) {
+            const logoutEvent = new CustomEvent('forceLogout', {
+              detail: {
+                reason: (data && (data.message || data.error)) || error.message || 'Authentication error',
+                source: 'api_interceptor_error_force',
+                endpoint: error.config?.url
+              }
+            });
+            window.dispatchEvent(logoutEvent);
+          }
+        } catch (e) {}
+
         return Promise.reject(error);
       }
     );
+
+    // Convenience: try to extend or revalidate an existing session
+    this.extendSession = async (sessionId) => {
+      // Servers may implement a dedicated extend endpoint; fallback to verifySession
+      try {
+        const resp = await this.verifySession(sessionId);
+        return { ok: resp.valid === true, data: resp };
+      } catch (e) {
+        return { ok: false, error: 'Failed to extend session' };
+      }
+    };
   }
 
   /**

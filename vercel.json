@@ -2,6 +2,7 @@
   "version": 2,
   "buildCommand": "npm run build",
   "outputDirectory": "build",
+  "regions": ["bom1"],
   "framework": "create-react-app",
   "env": {
     "REACT_APP_API_BASE_URL": "http://localhost:4000",

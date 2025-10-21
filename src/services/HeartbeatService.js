@@ -20,6 +20,9 @@ class HeartbeatService {
     this.lastHeartbeat = null;
     this.isOnline = navigator.onLine;
     this.queuedHeartbeats = [];
+    this._timeoutId = null; // for scheduled heartbeat
+    this.isSending = false;
+    this.nextScheduledAt = null;
   }
 
   /**
@@ -37,19 +40,25 @@ class HeartbeatService {
     this.isActive = true;
     this.failureCount = 0;
 
-  LoggingService.info('Starting heartbeat service...');
+    LoggingService.info('Starting heartbeat service...');
 
-    // Send initial heartbeat
+    // Restore lastHeartbeat from storage if present
+    try {
+      const last = localStorage.getItem('heartbeat:last');
+      if (last) {
+        this.lastHeartbeat = new Date(last);
+      }
+    } catch (e) {
+      LoggingService.warn('Could not read persisted heartbeat timestamp', e);
+    }
+
+    // Send initial heartbeat and schedule subsequent ones using timer-based scheduling
     this.sendHeartbeat();
 
-    // Setup periodic heartbeat
-    this.intervalId = setInterval(() => {
-  this.sendHeartbeat();
-    }, this.interval);
-
-  // Monitor network status
+    // Setup network and visibility monitoring
     this.setupNetworkMonitoring();
-  LoggingService.info(`Heartbeat service started with ${this.interval / 60000} minute interval`);
+    this.setupVisibilityMonitoring();
+    LoggingService.info(`Heartbeat service started with ${this.interval / 60000} minute interval`);
   }
 
   /**
@@ -71,10 +80,17 @@ class HeartbeatService {
     this.onFailureCallback = null;
     this.failureCount = 0;
     this.queuedHeartbeats = [];
+    // Clear scheduled timer
+    if (this._timeoutId) {
+      clearTimeout(this._timeoutId);
+      this._timeoutId = null;
+      this.nextScheduledAt = null;
+    }
 
-    // Remove network event listeners
+    // Remove network and visibility event listeners
     window.removeEventListener('online', this.handleOnline);
     window.removeEventListener('offline', this.handleOffline);
+    window.removeEventListener('visibilitychange', this.handleVisibilityChange);
   }
 
   /**
@@ -87,6 +103,13 @@ class HeartbeatService {
     }
 
     try {
+      // Prevent concurrent sends
+      if (this.isSending) {
+        LoggingService.info('Heartbeat send already in progress - skipping duplicate call');
+        return;
+      }
+
+      this.isSending = true;
   // Fetch fresh location for this heartbeat
   LoggingService.debug('Fetching fresh location for heartbeat...');
       let location;
@@ -113,8 +136,8 @@ class HeartbeatService {
       LoggingService.info('📡 Sending heartbeat with fresh location...');
       const response = await AuthService.sendHeartbeat(this.sessionId, this.deviceId, location);
 
-      // Log full response for debugging
-      LoggingService.info('Heartbeat API Response:', { ok: response.ok, statusCode: response.statusCode, message: response.message, error: response.error, login_status: response.login_status });
+  // Log full response for debugging
+  LoggingService.info('Heartbeat API Response:', { ok: response.ok, statusCode: response.statusCode, message: response.message, error: response.error, login_status: response.login_status });
 
       // CRITICAL: Check login_status FIRST (before response.ok)
       // If login_status is explicitly false, user MUST be logged out immediately
@@ -130,46 +153,69 @@ class HeartbeatService {
         } else {
           LoggingService.error('🚨 CRITICAL ERROR: No failure callback! Cannot logout user!');
         }
+        this.isSending = false;
+        // Emit event for UI
+        try { window.dispatchEvent(new CustomEvent('heartbeat:failure', { detail: { reason: 'login_status_false', response } })); } catch (e) {}
         return;
       }
 
       // CRITICAL: Check response.ok (any failure = immediate logout)
       if (response.ok === true) {
-        this.handleHeartbeatSuccess();
+        this.handleHeartbeatSuccess(response);
       } else {
         // CRITICAL: Any non-ok response MUST trigger IMMEDIATE logout - NO EXCEPTIONS
         LoggingService.error('❌ CRITICAL: Heartbeat failed - response.ok is NOT true:', response);
-        
+
         // Stop the service IMMEDIATELY
         this.stop();
-        
+
         // Trigger IMMEDIATE logout via callback
         if (this.onFailureCallback) {
           const message = response.statusCode === 401 || response.message === 'Session expired'
             ? 'Session expired. Please login again.'
             : response.error || response.message || 'Server connection lost. Please login again.';
-          
+
           LoggingService.error('🚨 Triggering IMMEDIATE auto-logout due to heartbeat failure');
           this.onFailureCallback(message);
         } else {
           LoggingService.error('🚨 CRITICAL ERROR: No failure callback registered! Cannot logout user!');
         }
+
+        this.isSending = false;
+        try { window.dispatchEvent(new CustomEvent('heartbeat:failure', { detail: { reason: 'response_not_ok', response } })); } catch (e) {}
         return;
       }
-
     } catch (error) {
       LoggingService.error('Heartbeat error:', error);
       this.handleHeartbeatFailure(error.message);
+    } finally {
+      this.isSending = false;
+      // Schedule next heartbeat if service still active
+      if (this.isActive) {
+        this.scheduleNextHeartbeat();
+      }
     }
   }
 
   /**
    * Handle successful heartbeat
    */
-  handleHeartbeatSuccess() {
-  this.failureCount = 0;
-  this.lastHeartbeat = new Date();
-  LoggingService.info('Heartbeat successful at', this.lastHeartbeat.toLocaleTimeString());
+  handleHeartbeatSuccess(response) {
+    this.failureCount = 0;
+    this.lastHeartbeat = new Date();
+    LoggingService.info('Heartbeat successful at', this.lastHeartbeat.toLocaleTimeString());
+
+    // Persist last heartbeat time so UI can restore state after resume/reload
+    try {
+      localStorage.setItem('heartbeat:last', this.lastHeartbeat.toISOString());
+    } catch (e) {
+      LoggingService.warn('Could not persist last heartbeat', e);
+    }
+
+    // Emit success event for UI consumers
+    try {
+      window.dispatchEvent(new CustomEvent('heartbeat:success', { detail: { response, timestamp: this.lastHeartbeat } }));
+    } catch (e) {}
 
     // Process any queued heartbeats when back online
     if (this.queuedHeartbeats.length > 0) {
@@ -197,6 +243,9 @@ class HeartbeatService {
     } else {
       LoggingService.error('🚨 CRITICAL ERROR: No failure callback! Cannot logout user!');
     }
+
+    // Emit event for UI too
+    try { window.dispatchEvent(new CustomEvent('heartbeat:failure', { detail: { reason: 'failure', message } })); } catch (e) {}
   }
 
   /**
@@ -281,8 +330,9 @@ class HeartbeatService {
       this.isOnline = true;
       this.failureCount = 0; // Reset failure count when back online
 
-      // Send immediate heartbeat when connection is restored
+      // Send immediate heartbeat when connection is restored and flush queued
       setTimeout(() => {
+        this.processQueuedHeartbeats();
         this.sendHeartbeat();
       }, 1000); // Wait 1 second after coming online
     };
@@ -294,6 +344,54 @@ class HeartbeatService {
 
     window.addEventListener('online', this.handleOnline);
     window.addEventListener('offline', this.handleOffline);
+  }
+
+  /**
+   * Setup visibilitychange handling so we can recover quickly when app becomes visible
+   */
+  setupVisibilityMonitoring() {
+    this.handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        LoggingService.info('Document became visible - forcing heartbeat and flushing queued items');
+        // Re-acquire wake lock if necessary by signaling other services via event
+        // Force an immediate heartbeat
+        this.processQueuedHeartbeats();
+        this.sendHeartbeat();
+      }
+    };
+
+    window.addEventListener('visibilitychange', this.handleVisibilityChange);
+  }
+
+  /**
+   * Schedule next heartbeat using a corrected timer (avoids setInterval drift and throttling effects)
+   */
+  scheduleNextHeartbeat() {
+    // Clear any existing timer
+    if (this._timeoutId) {
+      clearTimeout(this._timeoutId);
+      this._timeoutId = null;
+      this.nextScheduledAt = null;
+    }
+
+    if (!this.isActive) return;
+
+    const now = Date.now();
+    let delay = this.interval;
+
+    if (this.lastHeartbeat) {
+      const next = this.lastHeartbeat.getTime() + this.interval;
+      delay = Math.max(0, next - now);
+      this.nextScheduledAt = next;
+    } else {
+      this.nextScheduledAt = now + delay;
+    }
+
+    this._timeoutId = setTimeout(() => {
+      this._timeoutId = null;
+      this.nextScheduledAt = null;
+      if (this.isActive) this.sendHeartbeat();
+    }, delay);
   }
 
   /**

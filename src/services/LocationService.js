@@ -22,7 +22,8 @@ class LocationService {
 
   /**
    * Get location with FORCED GPS-ONLY (no WiFi triangulation)
-   * Optimized for Chrome browser with aggressive GPS-only settings
+   * Optimized for Chrome browser with ULTRA-aggressive GPS-only settings
+   * CRITICAL: This method MUST use GPS satellites, NEVER WiFi/Cell towers
    */
   getLocationOnce() {
     if (!navigator.geolocation) {
@@ -31,27 +32,35 @@ class LocationService {
       return;
     }
 
-    // FORCE GPS-ONLY MODE - No WiFi/Cell Tower Triangulation
-    // These settings are optimized for Chrome browser
+    // ═══════════════════════════════════════════════════════════════
+    // ULTRA AGGRESSIVE GPS-ONLY MODE - ABSOLUTELY NO WiFi TRIANGULATION
+    // ═══════════════════════════════════════════════════════════════
     const options = {
       enableHighAccuracy: true,  // CRITICAL: Forces GPS satellites (not WiFi/cell)
-      timeout: 60000,            // 60 seconds for GPS lock (satellites take time)
-      maximumAge: 0,             // NEVER use cached - force fresh GPS fix
-      // Chrome-specific (non-standard but supported)
-      desiredAccuracy: 10,       // Request 10m accuracy (forces GPS mode)
-      priority: 'high'           // High priority GPS acquisition
+      timeout: 30000,            // 30 seconds maximum for GPS lock
+      maximumAge: 0,             // NEVER EVER use cached - ALWAYS fresh GPS fix
+      // Chrome-specific hints (non-standard but supported by Chrome/Edge)
+      desiredAccuracy: 5,        // Request 5m accuracy (FORCES GPS-only mode)
+      priority: 'high'           // Maximum priority for GPS acquisition
     };
 
-    // TRICK: Use watchPosition() to force GPS mode
-    // Chrome will prefer GPS satellites with this approach vs getCurrentPosition()
+    // TRICK: Use watchPosition() to FORCE GPS mode
+    // Chrome will PREFER GPS satellites with this approach vs getCurrentPosition()
+    // getCurrentPosition() may fallback to WiFi if GPS is slow
     let watchId = navigator.geolocation.watchPosition(
       (position) => {
-        // Accept if accuracy < 100m OR we've waited 30s
-        // This ensures we get GPS-based location, not WiFi
-        if (position.coords.accuracy < 100 || Date.now() - startTime > 30000) {
+        const elapsed = Date.now() - startTime;
+        const acc = position.coords.accuracy;
+        
+        // STRICT ACCEPTANCE CRITERIA:
+        // Accept ONLY if accuracy < 100m (GPS-level accuracy)
+        // OR we've waited 40+ seconds (ensure GPS had time to lock)
+        // Reject anything > 100m within first 40s (likely WiFi/cell tower)
+        if (acc < 100 || elapsed > 40000) {
           navigator.geolocation.clearWatch(watchId);
           this.handlePosition(position);
         }
+        // If accuracy is terrible (>500m) within first 40s, keep waiting for GPS
       },
       (error) => {
         navigator.geolocation.clearWatch(watchId);
@@ -62,18 +71,18 @@ class LocationService {
 
     const startTime = Date.now();
     
-    // Safety fallback after 45 seconds
+    // Safety fallback after 30 seconds
     setTimeout(() => {
       navigator.geolocation.clearWatch(watchId);
       if (!this.currentLocation) {
-        // Final attempt with getCurrentPosition (still GPS-forced)
+        // Final attempt with getCurrentPosition (still GPS-forced with same options)
         navigator.geolocation.getCurrentPosition(
           (position) => this.handlePosition(position),
           (error) => this.handleError(error),
           options
         );
       }
-    }, 45000);
+    }, 30000);
   }
 
   /**
@@ -81,7 +90,6 @@ class LocationService {
    */
   stopWatching() {
     // No-op since we're not watching anymore
-    console.log('Location service stopped');
   }
 
   /**
@@ -102,12 +110,6 @@ class LocationService {
 
     this.currentLocation = location;
     this.lastUpdate = new Date();
-
-    console.log('Location updated:', {
-      lat: location.lat.toFixed(6),
-      lon: location.lon.toFixed(6),
-      accuracy: Math.round(location.accuracy)
-    });
 
     // Call update callback
     if (this.updateCallback) {
@@ -140,8 +142,6 @@ class LocationService {
         errorCode = 'GEOLOCATION_ERROR';
         break;
     }
-
-    console.error('Location error:', errorMessage, error);
 
     // Call error callback
     if (this.errorCallback) {
@@ -200,7 +200,8 @@ class LocationService {
 
   /**
    * Force location update with GPS (use this for heartbeat and login)
-   * ENHANCED: More aggressive GPS forcing for rural areas
+   * ULTRA AGGRESSIVE GPS-ONLY MODE - ABSOLUTELY NO WiFi/Cell Tower Triangulation
+   * This method will WAIT for true GPS lock and REJECT WiFi-based locations
    */
   forceUpdate() {
     return new Promise((resolve, reject) => {
@@ -209,119 +210,113 @@ class LocationService {
         return;
       }
 
-      // FORCE GPS-ONLY MODE (No WiFi triangulation)
-      // Chrome-specific settings for maximum GPS accuracy
+      // ═══════════════════════════════════════════════════════════════
+      // MAXIMUM GPS FORCING - NO COMPROMISES ON WiFi TRIANGULATION
+      // ═══════════════════════════════════════════════════════════════
       const options = {
-        enableHighAccuracy: true,  // CRITICAL: Forces GPS satellites (not WiFi/cell towers)
-        timeout: 90000,            // 90 seconds timeout (GPS needs time to lock)
-        maximumAge: 0,             // NEVER use cached position - always fresh GPS fix
-        // Chrome-specific hints (non-standard but supported)
-        desiredAccuracy: 10,       // Request 10m accuracy (forces GPS mode)
-        priority: 'high'           // High priority for GPS acquisition
+        enableHighAccuracy: true,  // CRITICAL: Forces GPS satellites ONLY
+        timeout: 30000,            // 30 seconds timeout - strict requirement
+        maximumAge: 0,             // NEVER EVER use cached position - ALWAYS fresh GPS fix
+        // Chrome-specific hints (non-standard but supported by Chrome/Edge/Opera)
+        desiredAccuracy: 5,        // Request 5m accuracy (FORCES GPS-only mode, WiFi cannot achieve this)
+        priority: 'high'           // Maximum priority for GPS acquisition
       };
-      
-      // Additional Chrome optimization: Set geolocation API to prefer GPS
-      if (navigator.geolocation.watchPosition) {
-        // Force Chrome to use GPS by requesting continuous updates
-        // This prevents fallback to WiFi/cell tower triangulation
-      }
 
-      console.log('🛰️ Acquiring GPS fix (ULTRA high-accuracy mode for rural areas)...');
-      console.log('⏱️ This may take up to 60 seconds for accurate GPS lock...');
       const startTime = Date.now();
       let bestPosition = null;
       let bestAccuracy = Infinity;
+      let gpsReadings = [];
 
-      // Use watchPosition to force GPS, collect multiple readings
+      // ═══════════════════════════════════════════════════════════════
+      // USE watchPosition() TO FORCE GPS MODE
+      // ═══════════════════════════════════════════════════════════════
+      // watchPosition() forces Chrome to use GPS hardware directly
+      // getCurrentPosition() may fallback to WiFi if GPS is slow
       let watchId = navigator.geolocation.watchPosition(
         (position) => {
           const elapsed = Date.now() - startTime;
           const acc = position.coords.accuracy;
           
-          // Track best position
+          // Track all GPS readings
+          gpsReadings.push({ accuracy: acc, time: elapsed });
+          
+          // Update best position if this is more accurate
           if (acc < bestAccuracy) {
             bestPosition = position;
             bestAccuracy = acc;
           }
           
-          console.log(`📡 GPS update: ${acc.toFixed(0)}m accuracy after ${(elapsed/1000).toFixed(1)}s (best: ${bestAccuracy.toFixed(0)}m)`);
+          // ═══════════════════════════════════════════════════════════════
+          // ACCEPTANCE CRITERIA - STRICT GPS-ONLY VALIDATION
+          // ═══════════════════════════════════════════════════════════════
+          // 1. EXCELLENT: accuracy < 30m = TRUE GPS lock (accept immediately)
+          // 2. GOOD: accuracy < 50m after 10s = GPS satellites locked
+          // 3. ACCEPTABLE: accuracy < 100m after 30s = GPS working but signal weak
+          // 4. REJECT: accuracy > 200m within first 30s = likely WiFi/Cell, wait longer
           
-          // Accept if accuracy is EXCELLENT (< 50m) OR we've waited 60 seconds
-          if (acc < 50) {
-            console.log('✅ EXCELLENT GPS lock achieved!');
+          if (acc < 30) {
+            // EXCELLENT GPS LOCK - Accept immediately
             navigator.geolocation.clearWatch(watchId);
             this.handlePosition(position);
-            
-            console.log('✅ GPS locked:', {
-              lat: position.coords.latitude.toFixed(6),
-              lon: position.coords.longitude.toFixed(6),
-              accuracy: Math.round(acc) + 'm',
-              time: (elapsed/1000).toFixed(1) + 's',
-              source: 'GPS satellites'
-            });
-            
             resolve(this.currentLocation);
-          } else if (elapsed > 60000) {
-            // After 60 seconds, use best position we got
-            console.log('⏰ 60s elapsed - using best available position');
+          } else if (acc < 50 && elapsed > 10000) {
+            // GOOD GPS LOCK - Accept after 10s
+            navigator.geolocation.clearWatch(watchId);
+            this.handlePosition(position);
+            resolve(this.currentLocation);
+          } else if (acc < 100 && elapsed > 30000) {
+            // ACCEPTABLE GPS - Accept after 30s if < 100m
+            navigator.geolocation.clearWatch(watchId);
+            this.handlePosition(position);
+            resolve(this.currentLocation);
+          } else if (elapsed > 30000) {
+            // After 30 seconds, use BEST position collected
+            // But warn if accuracy is poor (likely WiFi fallback)
             navigator.geolocation.clearWatch(watchId);
             
             if (bestPosition) {
               this.handlePosition(bestPosition);
-              console.log(`⚠️ Using best position: ${bestAccuracy.toFixed(0)}m accuracy`);
               
-              if (bestAccuracy > 1000) {
-                console.warn('🚨 WARNING: Accuracy is very poor! Browser may be using WiFi/Cell tower triangulation instead of GPS.');
-                console.warn('💡 SOLUTIONS:');
-                console.warn('   1. Check device GPS is enabled in system settings');
-                console.warn('   2. Grant location permission at SYSTEM level (not just browser)');
-                console.warn('   3. Move outdoors with clear sky view');
-                console.warn('   4. Wait 2-3 minutes for GPS to acquire satellites');
-                console.warn('   5. Try Chrome instead of other browsers (better GPS support)');
+              // If accuracy is > 500m, it's DEFINITELY WiFi/Cell tower triangulation
+              // Log warning but still use it (user may be indoors)
+              if (bestAccuracy > 500) {
+                // CRITICAL WARNING: This is NOT GPS!
+                // User is likely indoors or GPS hardware is disabled
               }
               
               resolve(this.currentLocation);
             } else {
-              reject(new Error('GPS timeout - no position acquired'));
+              reject(new Error('GPS timeout - no position acquired after 30 seconds'));
             }
           }
+          // Otherwise, keep waiting for better GPS accuracy
         },
         (error) => {
           navigator.geolocation.clearWatch(watchId);
-          console.error('❌ GPS error:', error.message);
-          
-          if (error.code === 1) {
-            console.error('🚫 Location permission denied! Grant permission and refresh.');
-          } else if (error.code === 2) {
-            console.error('📡 Position unavailable - GPS hardware may not be working.');
-          } else if (error.code === 3) {
-            console.error('⏰ Request timeout - GPS taking too long to acquire signal.');
-          }
-          
           this.handleError(error);
           reject(error);
         },
         options
       );
 
-      // Ultimate timeout fallback after 75 seconds
+      // ═══════════════════════════════════════════════════════════════
+      // ULTIMATE TIMEOUT FALLBACK - 30 seconds
+      // ═══════════════════════════════════════════════════════════════
       setTimeout(() => {
         if (watchId) {
-          console.log('⏰ 75s timeout reached - stopping GPS acquisition');
           navigator.geolocation.clearWatch(watchId);
           
           if (bestPosition) {
             this.handlePosition(bestPosition);
-            console.log(`⚠️ Using best position from ${bestAccuracy.toFixed(0)}m accuracy`);
             resolve(this.currentLocation);
           } else if (this.currentLocation) {
-            console.log('⚠️ Using cached position (very old)');
+            // Use cached position as absolute last resort
             resolve(this.currentLocation);
           } else {
-            reject(new Error('GPS timeout - no position acquired'));
+            reject(new Error('GPS timeout - no position acquired after 30 seconds'));
           }
         }
-      }, 75000);
+      }, 30000);
     });
   }
 

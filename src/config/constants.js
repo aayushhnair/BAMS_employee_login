@@ -25,6 +25,6 @@ export const LOCATION_TIMEOUT = parseInt(process.env.REACT_APP_LOCATION_TIMEOUT 
 export const LOCATION_HIGH_ACCURACY = process.env.REACT_APP_LOCATION_HIGH_ACCURACY === 'true';
 
 // App Info
-export const APP_NAME = process.env.REACT_APP_APP_NAME || 'BAMS Employee Client';
+export const APP_NAME = process.env.REACT_APP_APP_NAME || 'WorkSens Employee Client';
 export const APP_VERSION = process.env.REACT_APP_VERSION || '1.0.0';
 export const COMPANY_NAME = process.env.REACT_APP_COMPANY_NAME || 'Bhishma Solutions';
